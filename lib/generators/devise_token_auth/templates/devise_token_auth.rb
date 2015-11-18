@@ -34,4 +34,11 @@ DeviseTokenAuth.setup do |config|
   # If, however, you wish to integrate with legacy Devise authentication, you can
   # do so by enabling this flag. NOTE: This feature is highly experimental!
   # enable_standard_devise_support = false
+
+  # The default implementation will add "provider" and "uid" fields on the
+  # resource model. This behaviour means that users can either sign up with
+  # their email address or with Oauth. However, in order to allow users to sign
+  # in with more than one method, these fields are redundant. TODO: write this
+  # up properly
+  # config.enable_multiple_auth_methods = true
 end

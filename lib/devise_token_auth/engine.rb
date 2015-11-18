@@ -18,7 +18,8 @@ module DeviseTokenAuth
                  :default_password_reset_url,
                  :redirect_whitelist,
                  :check_current_password_before_update,
-                 :enable_standard_devise_support
+                 :enable_standard_devise_support,
+                 :multiple_signin_methods
 
   self.change_headers_on_each_request       = true
   self.max_number_of_devices                = 10
@@ -30,6 +31,7 @@ module DeviseTokenAuth
   self.redirect_whitelist                   = nil
   self.check_current_password_before_update = false
   self.enable_standard_devise_support       = false
+  self.multiple_signin_methods              = false
 
   def self.setup(&block)
     yield self
