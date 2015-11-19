@@ -31,7 +31,7 @@ module DeviseTokenAuth::Concerns::User
     validates_presence_of :uid, if: Proc.new { |u| u.provider != 'email' }
 
     # only validate unique emails among email registration users
-    validate :unique_email_user, on: :create
+    validate :unique_email_user, on: :create unless DeviseTokenAuth.enable_multiple_auth_methods
 
     # can't set default on text fields in mysql, simulate here instead.
     after_save :set_empty_token_hash
@@ -178,12 +178,12 @@ module DeviseTokenAuth::Concerns::User
       last_token: last_token,
       updated_at: Time.now
     }
-	
+
     max_clients = DeviseTokenAuth.max_number_of_devices
     while self.tokens.keys.length > 0 and max_clients < self.tokens.keys.length
       oldest_token = self.tokens.min_by { |cid, v| v[:expiry] || v["expiry"] }
       self.tokens.delete(oldest_token.first)
-    end	
+    end
 
     self.save!
 

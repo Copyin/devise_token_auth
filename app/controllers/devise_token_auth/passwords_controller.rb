@@ -34,7 +34,12 @@ module DeviseTokenAuth
         @email = resource_params[:email]
       end
 
-      q = "uid = ? AND provider='email'"
+      #TODO: verify whether we need uid for multiple_auth at all
+      if DeviseTokenAuth.enable_multiple_auth_methods
+        q = "uid = ? AND provider='email'"
+      else
+        q = "uid = ?"
+      end
 
       # fix for mysql default case insensitivity
       if ActiveRecord::Base.connection.adapter_name.downcase.starts_with? 'mysql'

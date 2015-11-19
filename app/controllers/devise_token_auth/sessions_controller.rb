@@ -20,7 +20,11 @@ module DeviseTokenAuth
           q_value.downcase!
         end
 
-        q = "#{field.to_s} = ? AND provider='email'"
+        if DeviseTokenAuth.enable_multiple_auth_methods
+          q = "#{field.to_s} = ?"
+        else
+          q = "#{field.to_s} = ? AND provider='email'"
+        end
 
         if ActiveRecord::Base.connection.adapter_name.downcase.starts_with? 'mysql'
           q = "BINARY " + q
