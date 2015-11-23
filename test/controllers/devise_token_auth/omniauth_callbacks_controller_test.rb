@@ -48,7 +48,7 @@ class OmniauthTest < ActionDispatch::IntegrationTest
       get_success
       client_id = controller.auth_params[:client_id]
       token = controller.auth_params[:auth_token]
-      expiry = controller.auth_params[:expiry]
+      expiry = controller.auth_params[:expiry].to_i
 
       # the expiry should have been set
       assert_equal expiry, @resource.tokens[client_id][:expiry]
@@ -122,49 +122,6 @@ class OmniauthTest < ActionDispatch::IntegrationTest
       test 'non-whitelisted attributes are ignored' do
         refute_equal @unpermitted_param, @resource.name
       end
-    end
-
-    describe "oauth registration attr" do
-
-      after do
-        User.any_instance.unstub(:new_record?)
-      end
-
-      describe 'with new user' do
-
-        before do
-          User.any_instance.expects(:new_record?).returns(true).at_least_once
-        end
-
-        test 'response contains oauth_registration attr' do
-
-          get_via_redirect '/auth/facebook', {
-            auth_origin_url: @redirect_url,
-            omniauth_window_type: 'newWindow'
-          }
-
-          assert_equal true, controller.auth_params[:oauth_registration]
-        end
-      end
-
-      describe 'with existing user' do
-
-        before do
-          User.any_instance.expects(:new_record?).returns(false).at_least_once
-        end
-
-        test 'response does not contain oauth_registration attr' do
-
-          get_via_redirect '/auth/facebook', {
-            auth_origin_url: @redirect_url,
-            omniauth_window_type: 'newWindow'
-          }
-
-          assert_equal false, controller.auth_params.key?(:oauth_registration)
-        end
-
-      end
-
     end
 
     describe 'using namespaces' do

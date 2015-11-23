@@ -27,21 +27,15 @@ module DeviseTokenAuth
         end
       end
 
-      # honor devise configuration for case_insensitive_keys
-      if resource_class.case_insensitive_keys.include?(:email)
-        @email = resource_params[:email].downcase
-      else
-        @email = resource_params[:email]
+      # TODO: Use resource_class.find_resource here instead of SQL
+
+      field = resource_class.authentication_field_for(resource_params.keys.map(&:to_sym))
+
+      if field
+        #TODO: It's assuming email????
+        @resource = resource_class.find_resource(resource_params[field], field)
+        @email = @resource.email
       end
-
-      q = "uid = ? AND provider='email'"
-
-      # fix for mysql default case insensitivity
-      if ActiveRecord::Base.connection.adapter_name.downcase.starts_with? 'mysql'
-        q = "BINARY uid = ? AND provider='email'"
-      end
-
-      @resource = resource_class.where(q, @email).first
 
       @errors = nil
       @error_status = 400

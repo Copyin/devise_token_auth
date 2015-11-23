@@ -24,15 +24,14 @@ module DeviseTokenAuth
 
     def omniauth_success
       get_resource_from_auth_hash
-      create_token_info
-      set_token_on_resource
-      create_auth_params
+      @auth_params = create_token_info
 
       if resource_class.devise_modules.include?(:confirmable)
         # don't send confirmation email!!!
         @resource.skip_confirmation!
       end
 
+      # TODO: Shouldn't this be 'devise_mapping' instead of :user?
       sign_in(:user, @resource, store: false, bypass: false)
 
       @resource.save!
@@ -157,30 +156,31 @@ module DeviseTokenAuth
     end
 
     def create_token_info
-      # create token info
-      @client_id = SecureRandom.urlsafe_base64(nil, false)
-      @token     = SecureRandom.urlsafe_base64(nil, false)
-      @expiry    = (Time.now + DeviseTokenAuth.token_lifespan).to_i
+      # These need to be instance variables so that we set the header info
+      # correctly
+      @provider_id = auth_hash['uid']
+      @provider = auth_hash['provider']
+
+      auth_values = @resource.create_new_auth_token(nil, @provider_id, @provider).symbolize_keys
+      @client_id = auth_values['client']
+      @token     = auth_values['access-token']
+      @expiry    = auth_values['expiry']
       @config    = omniauth_params['config_name']
-    end
 
-    def create_auth_params
-      @auth_params = {
-        auth_token:     @token,
-        client_id: @client_id,
-        uid:       @resource.uid,
-        expiry:    @expiry,
-        config:    @config
-      }
-      @auth_params.merge!(oauth_registration: true) if @oauth_registration
-      @auth_params
-    end
+      # The #create_new_auth_token values returned here have the token set as
+      # the "access-token" value. Unfortunately, the previous implementation
+      # would render this attribute out as "auth_token". Which is inconsistent
+      # and wrong, but if people are using the body of the auth response
+      # instead of the headers, they may see failures here. Not changing at the
+      # moment as this would therefore be a breaking change.
+      #
+      # TODO: Fix this so that it consistently returns this in an
+      # "access-token" field instead of an "auth_token".
+      auth_values[:auth_token] = auth_values.delete(:"access-token")
+      auth_values[:client_id] = auth_values.delete(:client)
 
-    def set_token_on_resource
-      @resource.tokens[@client_id] = {
-        token: BCrypt::Password.create(@token),
-        expiry: @expiry
-      }
+      auth_values.merge!(config: @config)
+      auth_values
     end
 
     def render_data(message, data)
@@ -229,14 +229,20 @@ module DeviseTokenAuth
     end
 
     def get_resource_from_auth_hash
-      # find or create user by provider and provider uid
-      @resource = resource_class.where({
-        uid:      auth_hash['uid'],
-        provider: auth_hash['provider']
-      }).first_or_initialize
+      @resource = resource_class.find_resource(
+        auth_hash['uid'],
+        auth_hash['provider']
+      )
 
-      if @resource.new_record?
-        @oauth_registration = true
+      if @resource.nil?
+        # TODO: There needs to be some configuration around this; if we're
+        # allowing multiple omniauth methods, we won't have 'uid' and
+        # 'provider' columns to populate. Instead it's up to the Rails app
+        # itself to implement this association.
+        @resource = resource_class.new(
+          uid:      auth_hash['uid'],
+          provider: auth_hash['provider']
+        )
         set_random_password
       end
 

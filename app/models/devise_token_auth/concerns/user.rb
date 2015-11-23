@@ -14,6 +14,7 @@ module DeviseTokenAuth::Concerns::User
     result
   end
 
+
   included do
     # Hack to check if devise is already enabled
     unless self.method_defined?(:devise_modules)
@@ -93,6 +94,111 @@ module DeviseTokenAuth::Concerns::User
   end
 
   module ClassMethods
+    # So this attempts 4 different finds to try and get the resource:
+    #
+    #   1. If there is a method registered for the provider using
+    #      resource_finder_for method, use that and return.
+    #   2. If there is no provider, attempt to find by uid alone. This is for
+    #      backwards compatibility; we've changed the format of the 'uid' header
+    #      in the controller so that it includes a provider. If there is no
+    #      provider, we just call against the uid held in the database, as this
+    #      is from a login prior to implementing this change.
+    #   3. We then search using {provider: provider, uid: uid} to cover the
+    #      default behaviour which doesn't allow multiple authentication methods.
+    #   4. Finally, we search for cases where a non-email field is being used for
+    #      authentication (e.g. username). This is a special case as there will
+    #      be a username column on the database, but due to the way the resource
+    #      is configured on setup, the "provider" value gets set to "email" (even
+    #      though it's actually username)
+    #
+    # TODO: Refactor the fuck out of this enormous un-DRY method
+    #
+    def find_resource(id, provider)
+      # If a finder method has been registered for this provider, use it!
+      finder_method = finder_methods[provider]
+      return finder_method.call(id) if finder_method
+
+      # This check is for backwards compatibility. On introducing multiple oauth
+      # methods, the uid header changed to include the provider. Prior to this
+      # change, however, the uid was only the identifier without the provider.
+      # Consequently, if we don't have the provider we fall back to the old
+      # behaviour of searching by uid.
+      #
+      # Original:
+      #   find_by(uid: id)
+      #
+      if provider.nil?
+        # TODO: No point downcasing; provider is nil so who cares
+        if self.case_insensitive_keys.include?(provider)
+          id.downcase!
+        end
+
+        query = "uid = ?"
+
+        if ActiveRecord::Base.connection.adapter_name.downcase.starts_with? 'mysql'
+          query = "BINARY " + query
+        end
+
+        return self.where(query, id).first
+      end
+
+      # Original (default behaviour if not allowing multiple auth methods):
+      #   find_by(provider: provider, uid: id)
+      #
+      if self.case_insensitive_keys.include?(provider)
+        id.downcase!
+      end
+
+      query = "uid = ? AND provider = ?"
+
+      if ActiveRecord::Base.connection.adapter_name.downcase.starts_with? 'mysql'
+        query = "BINARY " + query
+      end
+
+      resource = self.where(query, id, provider).first
+      return resource if resource
+
+      # ZOMGWTF?! Again, the fallback here to provider: 'email' is for
+      # backwards compatibility, there may have been setups which used a
+      # 'username' as the provider, but the row would have been stored as
+      # though their provider were 'email'. This ensures that in those
+      # scenarios, we will still successfully find the user
+      #
+      # Original:
+      #   find_by(provider: 'email', uid: id)
+
+      # Safety check to avoid running a query which will explode which doesn't
+      # have the provider column
+      return nil unless self.columns.map(&:name).include?(provider.to_s)
+
+      if self.case_insensitive_keys.include?(provider)
+        id.downcase!
+      end
+
+      # TODO: WHat about where the facebook user 12345 doesn't exist? This won't
+      # return above, so will cause a query to get run with 'facebook = 12345'
+      # which won't be your schema and things will blow up.
+      query = "#{provider} = ? AND provider = 'email'"
+
+      if ActiveRecord::Base.connection.adapter_name.downcase.starts_with? 'mysql'
+        query = "BINARY " + query
+      end
+
+      self.where(query, id).first
+    end
+
+    def authentication_field_for(allowed_fields)
+      (allowed_fields & authentication_keys).first
+    end
+
+    def resource_finder_for(resource, callable)
+      finder_methods[resource.to_s] = callable
+    end
+
+    def finder_methods
+      @@finder_methods ||= {}
+    end
+
     protected
 
 
@@ -161,7 +267,7 @@ module DeviseTokenAuth::Concerns::User
 
 
   # update user's auth token (should happen on each request)
-  def create_new_auth_token(client_id=nil)
+  def create_new_auth_token(client_id=nil, provider_id=nil, provider=nil)
     client_id  ||= SecureRandom.urlsafe_base64(nil, false)
     last_token ||= nil
     token        = SecureRandom.urlsafe_base64(nil, false)
@@ -178,21 +284,26 @@ module DeviseTokenAuth::Concerns::User
       last_token: last_token,
       updated_at: Time.now
     }
-	
+
     max_clients = DeviseTokenAuth.max_number_of_devices
     while self.tokens.keys.length > 0 and max_clients < self.tokens.keys.length
       oldest_token = self.tokens.min_by { |cid, v| v[:expiry] || v["expiry"] }
       self.tokens.delete(oldest_token.first)
-    end	
+    end
 
     self.save!
 
-    return build_auth_header(token, client_id)
+    # TODO: It seems weird that 'create_new_auth_token' returns a full on
+    # auth_header. It might be better if this returned just the token, and the
+    # caller was responsible for building up an auth header
+    return build_auth_header(token, client_id, provider_id, provider)
   end
 
 
-  def build_auth_header(token, client_id='default')
+  def build_auth_header(token, client_id='default', provider_id, provider)
     client_id ||= 'default'
+
+    uid = "#{provider_id} #{provider ? provider : self.try(:provider)}"
 
     # client may use expiry to prevent validation request if expired
     # must be cast as string or headers will break
@@ -203,7 +314,7 @@ module DeviseTokenAuth::Concerns::User
       "token-type"   => "Bearer",
       "client"       => client_id,
       "expiry"       => expiry.to_s,
-      "uid"          => self.uid
+      "uid"          => uid
     }
   end
 
@@ -216,11 +327,11 @@ module DeviseTokenAuth::Concerns::User
   end
 
 
-  def extend_batch_buffer(token, client_id)
+  def extend_batch_buffer(token, client_id, provider_id, provider)
     self.tokens[client_id]['updated_at'] = Time.now
     self.save!
 
-    return build_auth_header(token, client_id)
+    return build_auth_header(token, client_id, provider_id, provider)
   end
 
   def confirmed?

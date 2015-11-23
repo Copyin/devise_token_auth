@@ -52,12 +52,41 @@ module DeviseTokenAuth::Concerns::SetUserByToken
 
     return false unless @token
 
-    # mitigate timing attacks by finding by uid instead of auth token
-    user = uid && rc.find_by_uid(uid)
+    # The uid is a string which gives us the provider and the unique identifier
+    # to look up for that provider. e.g.:
+    #
+    #   "email bob@home.com"
+    #   "facebook 123456"
+    #
+    # For each provider, there is a method defined which will fetch a resource
+    # based given the id, which is configurable. e.g.:
+    #
+    #   class MyApp::CustomOmniauthController < DeviseTokenAuth::OmniauthCallbacksController do
+    #     resource_finder_for :facebook, ->(id) { FacebookUser.find_by(facebook_id: id).try(:user) }
+    #   end
+    #
+    # By default, we assume there is a 'provider' and 'uid' column in existence
+    # on your resource table, so if no overrides exist, we'll do:
+    #
+    #   rc.find_by(provider: provider, uid: id)
+    #
+    # TODO: This will completely break existing implementations, as the uid
+    # will only be "12345" or "bob@home.com" for existing setups. We don't want
+    # this to be a breaking change so we need to implement some sort of
+    # configuration setting to work out how to do this 'find_resource' bit.
+    #
+    @provider_id, @provider = uid.split # e.g. ["12345", "facebook"] or ["bob@home.com", "email"]
+    resource = rc.find_resource(@provider_id, @provider)
 
-    if user && user.valid_token?(@token, @client_id)
-      sign_in(:user, user, store: false, bypass: true)
-      return @resource = user
+    # mitigate timing attacks by finding by uid instead of auth token
+    # TODO: replace with new lines above
+    # TODO: why is this looking at :user? Shouldn't it be mapping?
+    #
+    # user = uid && rc.find_by_uid(uid)
+
+    if resource && resource.valid_token?(@token, @client_id)
+      sign_in(mapping, resource, store: false, bypass: true)
+      return @resource = resource
     else
       # zero all values previously set values
       @client_id = nil
@@ -74,7 +103,7 @@ module DeviseTokenAuth::Concerns::SetUserByToken
     @client_id = nil unless @used_auth_by_token
 
     if @used_auth_by_token and not DeviseTokenAuth.change_headers_on_each_request
-      auth_header = @resource.build_auth_header(@token, @client_id)
+      auth_header = @resource.build_auth_header(@token, @client_id, @provider_id, @provider)
 
       # update the response header
       response.headers.merge!(auth_header)
@@ -94,11 +123,11 @@ module DeviseTokenAuth::Concerns::SetUserByToken
         # extend expiration of batch buffer to account for the duration of
         # this request
         if @is_batch_request
-          auth_header = @resource.extend_batch_buffer(@token, @client_id)
+          auth_header = @resource.extend_batch_buffer(@token, @client_id, @provider_id, @provider)
 
         # update Authorization response header with new token
         else
-          auth_header = @resource.create_new_auth_token(@client_id)
+          auth_header = @resource.create_new_auth_token(@client_id, @provider_id, @provider)
 
           # update the response header
           response.headers.merge!(auth_header)
