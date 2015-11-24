@@ -94,94 +94,59 @@ module DeviseTokenAuth::Concerns::User
   end
 
   module ClassMethods
-    # So this attempts 4 different finds to try and get the resource:
-    #
-    #   1. If there is a method registered for the provider using
-    #      resource_finder_for method, use that and return.
-    #   2. If there is no provider, attempt to find by uid alone. This is for
-    #      backwards compatibility; we've changed the format of the 'uid' header
-    #      in the controller so that it includes a provider. If there is no
-    #      provider, we just call against the uid held in the database, as this
-    #      is from a login prior to implementing this change.
-    #   3. We then search using {provider: provider, uid: uid} to cover the
-    #      default behaviour which doesn't allow multiple authentication methods.
-    #   4. Finally, we search for cases where a non-email field is being used for
-    #      authentication (e.g. username). This is a special case as there will
-    #      be a username column on the database, but due to the way the resource
-    #      is configured on setup, the "provider" value gets set to "email" (even
-    #      though it's actually username)
-    #
-    # TODO: Refactor the fuck out of this enormous un-DRY method
+
+    # This attempts 4 different finds to try and get the resource, depending on
+    # how the resources have been configured and accounting for backwards
+    # compatibility prior to multiple authentication methods.
     #
     def find_resource(id, provider)
-      # If a finder method has been registered for this provider, use it!
+      # 1. If a finder method has been registered for this provider, use it!
+      #
       finder_method = finder_methods[provider.try(:to_sym)]
       return finder_method.call(id) if finder_method
 
-      # This check is for backwards compatibility. On introducing multiple oauth
-      # methods, the uid header changed to include the provider. Prior to this
-      # change, however, the uid was only the identifier without the provider.
-      # Consequently, if we don't have the provider we fall back to the old
-      # behaviour of searching by uid.
+      # 2. This check is for backwards compatibility. On introducing multiple
+      #    oauth methods, the uid header changed to include the provider. Prior
+      #    to this change, however, the uid was only the identifier.
+      #    Consequently, if we don't have the provider we fall back to the old
+      #    behaviour of searching by uid.
       #
-      if provider.nil?
-        # TODO: No point downcasing; provider is nil so who cares
-        if self.case_insensitive_keys.include?(provider)
-          id.downcase!
-        end
+      return case_sensitive_find("uid = ?", id) if provider.nil?
 
-        query = "uid = ?"
+      id.downcase! if self.case_insensitive_keys.include?(provider.to_sym)
 
-        if ActiveRecord::Base.connection.adapter_name.downcase.starts_with? 'mysql'
-          query = "BINARY " + query
-        end
-
-        return self.where(query, id).first
-      end
-
-      # Original (default behaviour if not allowing multiple auth methods):
-      #   find_by(provider: provider, uid: id)
+      # 3. We then search using {provider: provider, uid: uid} to cover the
+      #    default behaviour which doesn't allow multiple authentication
+      #    methods for a single resource
       #
-      if self.case_insensitive_keys.include?(provider)
-        id.downcase!
-      end
-
-      query = "uid = ? AND provider = ?"
-
-      if ActiveRecord::Base.connection.adapter_name.downcase.starts_with? 'mysql'
-        query = "BINARY " + query
-      end
-
-      resource = self.where(query, id, provider).first
+      resource = case_sensitive_find("uid = ? AND provider = ?", id, provider)
       return resource if resource
 
-      # ZOMGWTF?! Again, the fallback here to provider: 'email' is for
-      # backwards compatibility, there may have been setups which used a
-      # 'username' as the provider, but the row would have been stored as
-      # though their provider were 'email'. This ensures that in those
-      # scenarios, we will still successfully find the user
+      # 4. If we're at this point, we've either:
       #
-      # Original:
-      #   find_by(provider: 'email', uid: id)
-
-      # Safety check to avoid running a query which will explode which doesn't
-      # have the provider column
+      #  A. Got someone who hasn't registered yet
+      #  B. Are using a non-email field to identify users
+      #
+      # If A is the case, we likely won't have a column which corresponds to
+      # the value of "provider" (e.g. "twitter"). Consequently, bail out to
+      # avoid running a query selecting on a column we don't have.
+      #
       return nil unless self.columns.map(&:name).include?(provider.to_s)
 
-      if self.case_insensitive_keys.include?(provider)
-        id.downcase!
-      end
+      # The use of provider: 'email' is for backwards compatibility. There may
+      # have been setups which used a 'username' as the provider, but the row
+      # would have been stored as though their provider were 'email'. This
+      # ensures that in those scenarios, we will still successfully find the
+      # resource
+      case_sensitive_find("#{provider} = ? AND provider = 'email'", id)
+    end
 
-      # TODO: WHat about where the facebook user 12345 doesn't exist? This won't
-      # return above, so will cause a query to get run with 'facebook = 12345'
-      # which won't be your schema and things will blow up.
-      query = "#{provider} = ? AND provider = 'email'"
-
+    def case_sensitive_find(query, *args)
       if ActiveRecord::Base.connection.adapter_name.downcase.starts_with? 'mysql'
         query = "BINARY " + query
       end
 
-      self.where(query, id).first
+      where(query, *args).first
     end
 
     def authentication_field_for(allowed_fields)
