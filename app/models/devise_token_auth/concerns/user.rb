@@ -115,7 +115,7 @@ module DeviseTokenAuth::Concerns::User
     #
     def find_resource(id, provider)
       # If a finder method has been registered for this provider, use it!
-      finder_method = finder_methods[provider]
+      finder_method = finder_methods[provider.try(:to_sym)]
       return finder_method.call(id) if finder_method
 
       # This check is for backwards compatibility. On introducing multiple oauth
@@ -123,9 +123,6 @@ module DeviseTokenAuth::Concerns::User
       # change, however, the uid was only the identifier without the provider.
       # Consequently, if we don't have the provider we fall back to the old
       # behaviour of searching by uid.
-      #
-      # Original:
-      #   find_by(uid: id)
       #
       if provider.nil?
         # TODO: No point downcasing; provider is nil so who cares
@@ -192,7 +189,7 @@ module DeviseTokenAuth::Concerns::User
     end
 
     def resource_finder_for(resource, callable)
-      finder_methods[resource.to_s] = callable
+      finder_methods[resource.to_sym] = callable
     end
 
     def finder_methods
@@ -293,17 +290,26 @@ module DeviseTokenAuth::Concerns::User
 
     self.save!
 
-    # TODO: It seems weird that 'create_new_auth_token' returns a full on
-    # auth_header. It might be better if this returned just the token, and the
-    # caller was responsible for building up an auth header
+    # REVIEW: It seems weird that 'create_new_auth_token' returns a full on
+    # auth_header rather than just the token it's created. It might be better
+    # if this returned just the token, and the caller was responsible for
+    # building up an auth header. The main reason it returns the auth header
+    # here is to simplify testing, which is not a great reason to do it.
     return build_auth_header(token, client_id, provider_id, provider)
   end
 
-
+  # TODO: Document provider_id/provider a bit better
   def build_auth_header(token, client_id='default', provider_id, provider)
     client_id ||= 'default'
 
-    uid = "#{provider_id} #{provider ? provider : self.try(:provider)}"
+    # If we've not been given a specific provider, intuit it. This may occur
+    # when logging in through standard devise (for example). See the check
+    # for DeviseTokenAuth.enable_standard_devise_support in:
+    #
+    #  DeviseAuthToken::SetUserToken#set_user_token
+    #
+    provider    = self.class.authentication_keys.first if provider.nil?
+    provider_id = self.send(provider)                  if provider_id.nil?
 
     # client may use expiry to prevent validation request if expired
     # must be cast as string or headers will break
@@ -314,10 +320,9 @@ module DeviseTokenAuth::Concerns::User
       "token-type"   => "Bearer",
       "client"       => client_id,
       "expiry"       => expiry.to_s,
-      "uid"          => uid
+      "uid"          => "#{provider_id} #{provider}"
     }
   end
-
 
   def build_auth_url(base_url, args)
     args[:uid]    = self.uid

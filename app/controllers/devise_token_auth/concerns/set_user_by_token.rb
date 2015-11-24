@@ -37,6 +37,8 @@ module DeviseTokenAuth::Concerns::SetUserByToken
       if devise_warden_user && devise_warden_user.tokens[@client_id].nil?
         @used_auth_by_token = false
         @resource = devise_warden_user
+        # REVIEW: Why are we bothering to create an auth token here? It won't
+        # get used anywhere by the looks of it...?
         @resource.create_new_auth_token
       end
     end
@@ -52,11 +54,13 @@ module DeviseTokenAuth::Concerns::SetUserByToken
 
     return false unless @token
 
+    # TODO: Pull this comment out into documentation
+    #
     # The uid is a string which gives us the provider and the unique identifier
     # to look up for that provider. e.g.:
     #
-    #   "email bob@home.com"
-    #   "facebook 123456"
+    #   "bob@home.com email"
+    #   "123456 facebook"
     #
     # For each provider, there is a method defined which will fetch a resource
     # based given the id, which is configurable. e.g.:
@@ -66,26 +70,20 @@ module DeviseTokenAuth::Concerns::SetUserByToken
     #   end
     #
     # By default, we assume there is a 'provider' and 'uid' column in existence
-    # on your resource table, so if no overrides exist, we'll do:
+    # on your resource table, so if no overrides exist, we'll ultimately do:
     #
     #   rc.find_by(provider: provider, uid: id)
     #
-    # TODO: This will completely break existing implementations, as the uid
-    # will only be "12345" or "bob@home.com" for existing setups. We don't want
-    # this to be a breaking change so we need to implement some sort of
-    # configuration setting to work out how to do this 'find_resource' bit.
+    # NOTE: By searching for the user by an identifier instead of by token, we
+    # mitigate timing attacks
     #
     @provider_id, @provider = uid.split # e.g. ["12345", "facebook"] or ["bob@home.com", "email"]
     resource = rc.find_resource(@provider_id, @provider)
 
-    # mitigate timing attacks by finding by uid instead of auth token
-    # TODO: replace with new lines above
-    # TODO: why is this looking at :user? Shouldn't it be mapping?
-    #
-    # user = uid && rc.find_by_uid(uid)
-
     if resource && resource.valid_token?(@token, @client_id)
-      sign_in(mapping, resource, store: false, bypass: true)
+      # TODO: why is this looking at :user? Shouldn't it be mapping to handle
+      # multiple devise models such as Admin?
+      sign_in(:user, resource, store: false, bypass: true)
       return @resource = resource
     else
       # zero all values previously set values

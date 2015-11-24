@@ -156,7 +156,7 @@ module DeviseTokenAuth
     end
 
     def create_token_info
-      # These need to be instance variables so that we set the header info
+      # These need to be instance variables so that we set the auth header info
       # correctly
       @provider_id = auth_hash['uid']
       @provider = auth_hash['provider']

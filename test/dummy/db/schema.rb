@@ -11,7 +11,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 20150708104536) do
+ActiveRecord::Schema.define(version: 20151124151819) do
 
   create_table "evil_users", force: :cascade do |t|
     t.string   "email"
@@ -203,12 +203,14 @@ ActiveRecord::Schema.define(version: 20150708104536) do
     t.datetime "updated_at"
     t.integer  "operating_thetan"
     t.string   "favorite_color"
+    t.integer  "twitter_id"
   end
 
   add_index "users", ["confirmation_token"], name: "index_users_on_confirmation_token", unique: true
   add_index "users", ["email"], name: "index_users_on_email"
   add_index "users", ["nickname"], name: "index_users_on_nickname", unique: true
   add_index "users", ["reset_password_token"], name: "index_users_on_reset_password_token", unique: true
+  add_index "users", ["twitter_id"], name: "index_users_on_twitter_id"
   add_index "users", ["uid", "provider"], name: "index_users_on_uid_and_provider", unique: true
 
 end

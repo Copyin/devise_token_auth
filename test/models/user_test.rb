@@ -99,5 +99,42 @@ class UserTest < ActiveSupport::TestCase
         assert @resource.save
       end
     end
+
+    describe '.find_resource' do
+      before do
+        @resource = users(:confirmed_email_user)
+        @resource.skip_confirmation!
+        @resource.save!
+      end
+
+      test 'finding the resource successfully with custom finder methods for a provider' do
+        @resource.update_attributes!(twitter_id: 98765)
+        found_resource = User.find_resource(98765, 'twitter')
+
+        assert_equal @resource, found_resource
+      end
+
+      test 'finding the resource successfully with no provider' do
+        # Searches just by uid, which by default for this resource is email
+        found_resource = User.find_resource(@resource.email, nil)
+        assert_equal @resource, found_resource
+      end
+
+      test 'finding the resource successfully with no custom finder method for email' do
+        found_resource = User.find_resource(@resource.email, 'email')
+        assert_equal @resource, found_resource
+      end
+
+      test 'finding the resource successfully with no custom finder method for an oauth provider' do
+        @resource.update_attributes!(provider: 'facebook', uid: '12234567')
+        found_resource = User.find_resource(12234567, 'facebook')
+        assert_equal @resource, found_resource
+      end
+
+      test 'finding the resource successfully with a non-email, non-oauth provider' do
+        found_resource = User.find_resource(@resource.nickname, 'nickname')
+        assert_equal @resource, found_resource
+      end
+    end
   end
 end

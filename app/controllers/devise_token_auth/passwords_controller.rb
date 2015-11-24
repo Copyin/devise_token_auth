@@ -27,20 +27,14 @@ module DeviseTokenAuth
         end
       end
 
-      # TODO: Use resource_class.find_resource here instead of SQL
-
       field = resource_class.authentication_field_for(resource_params.keys.map(&:to_sym))
 
-      if field
-        #TODO: It's assuming email????
-        @resource = resource_class.find_resource(resource_params[field], field)
-        @email = @resource.email
-      end
-
+      @resource = resource_class.find_resource(resource_params[field], field) if field
       @errors = nil
       @error_status = 400
 
       if @resource
+        @email = @resource.email
         yield if block_given?
         @resource.send_reset_password_instructions({
           email: @email,
@@ -55,7 +49,10 @@ module DeviseTokenAuth
           @errors = @resource.errors
         end
       else
-        @errors = [I18n.t("devise_token_auth.passwords.user_not_found", email: @email)]
+        # TODO: The resource_params could be a "username" field depending on
+        # what keys the resource uses for authentication. This translation
+        # should be updated to reflect this.
+        @errors = [I18n.t("devise_token_auth.passwords.user_not_found", email: resource_params[field])]
         @error_status = 404
       end
 

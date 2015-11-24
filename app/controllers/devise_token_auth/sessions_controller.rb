@@ -15,8 +15,9 @@ module DeviseTokenAuth
         @resource = resource_class.find_resource(resource_params[field], field)
       end
 
-      if @resource and valid_params?(field, q_value) and @resource.valid_password?(resource_params[:password]) and (!@resource.respond_to?(:active_for_authentication?) or @resource.active_for_authentication?)
-        auth_values = @resource.create_new_auth_token
+      if @resource and @resource.valid_password?(resource_params[:password]) and (!@resource.respond_to?(:active_for_authentication?) or @resource.active_for_authentication?)
+        auth_values = @resource.create_new_auth_token(nil, resource_params[field], field)
+
         # These values are required when updating the auth headers at the end
         # of the request, see:
         #   DeviseTokenAuth::Concerns::SetUserByToken#update_auth_header
@@ -57,10 +58,6 @@ module DeviseTokenAuth
     end
 
     protected
-
-    def valid_params?(key, val)
-      resource_params[:password] && key && val
-    end
 
     def get_auth_params
       auth_key = nil
