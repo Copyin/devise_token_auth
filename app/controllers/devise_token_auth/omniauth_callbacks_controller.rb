@@ -180,6 +180,7 @@ module DeviseTokenAuth
       auth_values[:client_id] = auth_values.delete(:client)
 
       auth_values.merge!(config: @config)
+      auth_values.merge!(oauth_registration: true) if @oauth_registration
       auth_values
     end
 
@@ -243,6 +244,7 @@ module DeviseTokenAuth
           uid:      auth_hash['uid'],
           provider: auth_hash['provider']
         )
+        @oauth_registration = true
         set_random_password
       end
 
