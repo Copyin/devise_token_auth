@@ -16,6 +16,9 @@ module DeviseTokenAuth::Concerns::User
 
 
   included do
+
+    class_variable_set(:@@finder_methods, {})
+
     # Hack to check if devise is already enabled
     unless self.method_defined?(:devise_modules)
       devise :database_authenticatable, :registerable,
@@ -58,6 +61,14 @@ module DeviseTokenAuth::Concerns::User
 
     def email_changed?
       false
+    end
+
+    def provider
+      if has_attribute?(:provider)
+        read_attribute(:provider)
+      else
+        self.class.authentication_keys.first.to_s
+      end
     end
 
     # override devise method to include additional info as opts hash
@@ -109,9 +120,13 @@ module DeviseTokenAuth::Concerns::User
       #    oauth methods, the uid header changed to include the provider. Prior
       #    to this change, however, the uid was only the identifier.
       #    Consequently, if we don't have the provider we fall back to the old
-      #    behaviour of searching by uid.
+      #    behaviour of searching by uid. If we don't have a uid (i.e. we're
+      #    allowing multiple auth methods) then we default to something sane.
       #
-      return case_sensitive_find("uid = ?", id) if provider.nil?
+      if provider.nil?
+        field = column_names.include?("uid") ? "uid" : authentication_keys.first
+        return case_sensitive_find("#{field} = ?", id)
+      end
 
       id.downcase! if self.case_insensitive_keys.include?(provider.to_sym)
 
@@ -119,8 +134,10 @@ module DeviseTokenAuth::Concerns::User
       #    default behaviour which doesn't allow multiple authentication
       #    methods for a single resource
       #
-      resource = case_sensitive_find("uid = ? AND provider = ?", id, provider)
-      return resource if resource
+      if column_names.include?("uid") && column_names.include?("provider")
+        resource = case_sensitive_find("uid = ? AND provider = ?", id, provider)
+        return resource if resource
+      end
 
       # 4. If we're at this point, we've either:
       #
@@ -131,14 +148,9 @@ module DeviseTokenAuth::Concerns::User
       # the value of "provider" (e.g. "twitter"). Consequently, bail out to
       # avoid running a query selecting on a column we don't have.
       #
-      return nil unless self.columns.map(&:name).include?(provider.to_s)
+      return nil unless column_names.include?(provider.to_s)
 
-      # The use of provider: 'email' is for backwards compatibility. There may
-      # have been setups which used a 'username' as the provider, but the row
-      # would have been stored as though their provider were 'email'. This
-      # ensures that in those scenarios, we will still successfully find the
-      # resource
-      case_sensitive_find("#{provider} = ? AND provider = 'email'", id)
+      case_sensitive_find("#{provider} = ?", id)
     end
 
     def case_sensitive_find(query, *args)
@@ -153,16 +165,17 @@ module DeviseTokenAuth::Concerns::User
       (allowed_fields & authentication_keys).first
     end
 
+    # These two methods must use .class_variable_get or the class variable gets
+    # set on this ClassMethods module, instead of the class including it
     def resource_finder_for(resource, callable)
-      finder_methods[resource.to_sym] = callable
+      self.class_variable_get(:@@finder_methods)[resource.to_sym] = callable
     end
 
     def finder_methods
-      @@finder_methods ||= {}
+      self.class_variable_get(:@@finder_methods)
     end
 
     protected
-
 
     def tokens_has_json_column_type?
       table_exists? && self.columns_hash['tokens'] && self.columns_hash['tokens'].type.in?([:json, :jsonb])
@@ -329,7 +342,9 @@ module DeviseTokenAuth::Concerns::User
   end
 
   def sync_uid
-    self.uid = email if provider == 'email'
+    if provider == 'email' && has_attribute?(:uid)
+      self.uid = email
+    end
   end
 
   def destroy_expired_tokens

@@ -109,7 +109,7 @@ class UserTest < ActiveSupport::TestCase
 
       test 'finding the resource successfully with custom finder methods for a provider' do
         @resource.update_attributes!(twitter_id: 98765)
-        found_resource = User.find_resource(98765, 'twitter')
+        found_resource = User.find_resource(@resource.twitter_id, 'twitter')
 
         assert_equal @resource, found_resource
       end

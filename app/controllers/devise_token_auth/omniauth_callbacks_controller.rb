@@ -240,10 +240,9 @@ module DeviseTokenAuth
         # allowing multiple omniauth methods, we won't have 'uid' and
         # 'provider' columns to populate. Instead it's up to the Rails app
         # itself to implement this association.
-        @resource = resource_class.new(
-          uid:      auth_hash['uid'],
-          provider: auth_hash['provider']
-        )
+        @resource = resource_class.new
+        @resource.uid      = auth_hash['uid']      if @resource.has_attribute?(:uid)
+        @resource.provider = auth_hash['provider'] if @resource.has_attribute?(:provider)
         @oauth_registration = true
         set_random_password
       end
