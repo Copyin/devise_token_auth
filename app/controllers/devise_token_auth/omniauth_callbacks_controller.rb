@@ -31,7 +31,7 @@ module DeviseTokenAuth
         @resource.skip_confirmation!
       end
 
-      # TODO: Shouldn't this be 'devise_mapping' instead of :user?
+      # REVIEW: Shouldn't this be 'devise_mapping' instead of :user?
       sign_in(:user, @resource, store: false, bypass: false)
 
       @resource.save!
@@ -172,7 +172,8 @@ module DeviseTokenAuth
       # would render this attribute out as "auth_token". Which is inconsistent
       # and wrong, but if people are using the body of the auth response
       # instead of the headers, they may see failures here. Not changing at the
-      # moment as this would therefore be a breaking change.
+      # moment as this would therefore be a breaking change. Same goes for
+      # client_id/client.
       #
       # TODO: Fix this so that it consistently returns this in an
       # "access-token" field instead of an "auth_token".
@@ -236,11 +237,7 @@ module DeviseTokenAuth
       )
 
       if @resource.nil?
-        # TODO: There needs to be some configuration around this; if we're
-        # allowing multiple omniauth methods, we won't have 'uid' and
-        # 'provider' columns to populate. Instead it's up to the Rails app
-        # itself to implement this association.
-        @resource = resource_class.new
+        @resource          = resource_class.new
         @resource.uid      = auth_hash['uid']      if @resource.has_attribute?(:uid)
         @resource.provider = auth_hash['provider'] if @resource.has_attribute?(:provider)
         @oauth_registration = true

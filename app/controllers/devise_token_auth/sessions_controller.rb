@@ -18,8 +18,8 @@ module DeviseTokenAuth
       if @resource and @resource.valid_password?(resource_params[:password]) and (!@resource.respond_to?(:active_for_authentication?) or @resource.active_for_authentication?)
         auth_values = @resource.create_new_auth_token(nil, resource_params[field], field)
 
-        # These values are required when updating the auth headers at the end
-        # of the request, see:
+        # These instance variables are required when updating the auth headers
+        # at the end of the request, see:
         #   DeviseTokenAuth::Concerns::SetUserByToken#update_auth_header
         @token       = auth_values["access-token"]
         @client_id   = auth_values["client"]

@@ -50,7 +50,7 @@ module DeviseTokenAuth
           else
             # email auth has been bypassed, authenticate user
             #
-            # TODO: Shouldn't this be calling resource_class.create_new_auth_token?
+            # REVIEW: Shouldn't this be calling resource_class.create_new_auth_token?
             @client_id = SecureRandom.urlsafe_base64(nil, false)
             @token     = SecureRandom.urlsafe_base64(nil, false)
 

@@ -14,7 +14,6 @@ module DeviseTokenAuth::Concerns::User
     result
   end
 
-
   included do
 
     class_variable_set(:@@finder_methods, {})
