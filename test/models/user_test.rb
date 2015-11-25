@@ -136,5 +136,31 @@ class UserTest < ActiveSupport::TestCase
         assert_equal @resource, found_resource
       end
     end
+
+    describe 'email uniqueness' do
+      before do
+        email = Faker::Internet.email
+        @resource = User.create!(
+          email:                 email,
+          uid:                   email,
+          provider:              'email',
+          password:              'somepassword',
+          password_confirmation: 'somepassword'
+        )
+      end
+
+      test 'creating user with existing email adds an error' do
+        new_resource = User.new(
+          email:                 @resource.email,
+          uid:                   @resource.email,
+          provider:              'email',
+          password:              'anotherpassword',
+          password_confirmation: 'anotherpassword'
+        )
+
+        refute(new_resource.save)
+        assert_includes(new_resource.errors.keys, :email)
+      end
+    end
   end
 end
